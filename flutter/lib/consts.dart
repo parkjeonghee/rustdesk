@@ -170,6 +170,12 @@ const String kOptionAllowWebSocket = "allow-websocket";
 const String kOptionAllowInsecureTLSFallback = "allow-insecure-tls-fallback";
 const String kOptionDisableUdp = "disable-udp";
 const String kOptionEnableFlutterHttpOnRust = "enable-flutter-http-on-rust";
+const String kOptionDeviceProvisionSerialNumber =
+    "device-provision-serial-number";
+const String kOptionDeviceProvisionClientId = "device-provision-client-id";
+const String kOptionDeviceProvisionClientSecret =
+    "device-provision-client-secret";
+const String kOptionDeviceProvisionedAt = "device-provisioned-at";
 
 // builtin options
 const String kOptionHideServerSetting = "hide-server-settings";
