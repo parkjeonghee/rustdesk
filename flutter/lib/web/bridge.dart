@@ -1163,6 +1163,10 @@ class RustdeskImpl {
     return Future.value('');
   }
 
+  Future<String> mainGetPublicKey({dynamic hint}) {
+    return Future.value('');
+  }
+
   Future<String> cmGetClientsState({dynamic hint}) {
     throw UnimplementedError("cmGetClientsState");
   }

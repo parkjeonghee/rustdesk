@@ -1701,6 +1701,14 @@ pub fn main_get_fingerprint() -> String {
     get_fingerprint()
 }
 
+pub fn main_get_public_key() -> String {
+    config::Config::get_key_pair()
+        .1
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect()
+}
+
 pub fn cm_get_clients_state() -> String {
     crate::ui_cm_interface::get_clients_state()
 }

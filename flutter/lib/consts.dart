@@ -176,6 +176,10 @@ const String kOptionDeviceProvisionClientId = "device-provision-client-id";
 const String kOptionDeviceProvisionClientSecret =
     "device-provision-client-secret";
 const String kOptionDeviceProvisionedAt = "device-provisioned-at";
+const String kOptionDeviceClientUuid = "device-client-uuid";
+const String kOptionDeviceAccessToken = "device-access-token";
+const String kOptionDeviceAccessTokenPayload =
+    "device-access-token-payload";
 
 // builtin options
 const String kOptionHideServerSetting = "hide-server-settings";
