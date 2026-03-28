@@ -14,9 +14,19 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.ClipboardManager
+import android.content.IntentFilter
+import android.app.ActivityManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.os.Build
 import android.os.IBinder
+import android.os.BatteryManager
+import android.os.Environment
+import android.os.PowerManager
+import android.os.StatFs
+import android.os.SystemClock
 import android.util.Log
 import android.view.WindowManager
 import android.media.MediaCodecInfo
@@ -33,6 +43,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import kotlin.concurrent.thread
+import kotlin.math.roundToInt
 
 
 class MainActivity : FlutterActivity() {
@@ -256,6 +267,9 @@ class MainActivity : FlutterActivity() {
                         result.success(false)
                     }
                 }
+                "get_device_resource_snapshot" -> {
+                    result.success(getDeviceResourceSnapshot())
+                }
                 GET_VALUE -> {
                     if (call.arguments is String) {
                         if (call.arguments == KEY_IS_SUPPORT_VOICE_CALL) {
@@ -278,6 +292,123 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+    }
+
+    private fun getDeviceResourceSnapshot(): Map<String, Any?> {
+        val memoryInfo = ActivityManager.MemoryInfo()
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        activityManager.getMemoryInfo(memoryInfo)
+
+        val statFs = StatFs(Environment.getDataDirectory().absolutePath)
+        val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+
+        val batteryLevel = batteryIntent?.let {
+            val level = it.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+            val scale = it.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+            if (level >= 0 && scale > 0) ((level * 100.0) / scale).roundToInt() else null
+        }
+        val batteryCharging = batteryIntent?.let {
+            when (it.getIntExtra(BatteryManager.EXTRA_STATUS, -1)) {
+                BatteryManager.BATTERY_STATUS_CHARGING,
+                BatteryManager.BATTERY_STATUS_FULL -> true
+                BatteryManager.BATTERY_STATUS_DISCHARGING,
+                BatteryManager.BATTERY_STATUS_NOT_CHARGING -> false
+                else -> null
+            }
+        }
+        val batteryTemperatureCelsius = batteryIntent?.let {
+            val temperature = it.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1)
+            if (temperature >= 0) temperature / 10.0 else null
+        }
+
+        val activeNetwork = connectivityManager.activeNetwork
+        val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
+        val networkConnected = capabilities != null
+        val networkType = when {
+            capabilities == null -> null
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "WIFI"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "CELLULAR"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ETHERNET"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "VPN"
+            else -> "OTHER"
+        }
+
+        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager?
+        val wifiInfo = wifiManager?.connectionInfo
+        val networkSignalLevel = if (networkType == "WIFI" && wifiInfo != null) {
+            WifiManager.calculateSignalLevel(wifiInfo.rssi, 5)
+        } else {
+            null
+        }
+
+        val extras = mutableMapOf<String, Any?>(
+            "screenOn" to powerManager.isInteractive,
+            "androidApiLevel" to Build.VERSION.SDK_INT,
+            "deviceModel" to Build.MODEL,
+            "manufacturer" to Build.MANUFACTURER,
+        )
+        if (networkType == "WIFI" && wifiInfo != null) {
+            extras["ssid"] = wifiInfo.ssid?.removePrefix("\"")?.removeSuffix("\"")
+            extras["ipAddress"] = formatIpAddress(wifiInfo.ipAddress)
+        }
+
+        return mapOf(
+            "cpuUsagePercent" to readCpuUsagePercent(),
+            "memoryTotalMb" to memoryInfo.totalMem / 1024 / 1024,
+            "memoryAvailableMb" to memoryInfo.availMem / 1024 / 1024,
+            "storageTotalMb" to statFs.totalBytes / 1024 / 1024,
+            "storageAvailableMb" to statFs.availableBytes / 1024 / 1024,
+            "batteryLevelPercent" to batteryLevel,
+            "batteryCharging" to batteryCharging,
+            "batteryTemperatureCelsius" to batteryTemperatureCelsius,
+            "networkType" to networkType,
+            "networkConnected" to networkConnected,
+            "networkSignalLevel" to networkSignalLevel,
+            "uptimeSeconds" to SystemClock.elapsedRealtime() / 1000,
+            "extras" to JSONObject(extras).toString(),
+        )
+    }
+
+    private fun readCpuUsagePercent(): Double? {
+        val first = readCpuStat() ?: return null
+        Thread.sleep(200)
+        val second = readCpuStat() ?: return null
+        val totalDiff = second.first - first.first
+        val idleDiff = second.second - first.second
+        if (totalDiff <= 0L) {
+            return null
+        }
+        return ((totalDiff - idleDiff).toDouble() * 100.0 / totalDiff)
+            .coerceIn(0.0, 100.0)
+    }
+
+    private fun readCpuStat(): Pair<Long, Long>? {
+        return try {
+            val line = java.io.RandomAccessFile("/proc/stat", "r").use { it.readLine() }
+            val parts = line.split(Regex("\\s+")).filter { it.isNotBlank() }
+            if (parts.size < 5 || parts[0] != "cpu") {
+                return null
+            }
+            val values = parts.drop(1).mapNotNull { it.toLongOrNull() }
+            if (values.size < 4) {
+                return null
+            }
+            val idle = values.getOrElse(3) { 0L } + values.getOrElse(4) { 0L }
+            Pair(values.sum(), idle)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun formatIpAddress(ip: Int): String {
+        return listOf(
+            ip and 0xff,
+            ip shr 8 and 0xff,
+            ip shr 16 and 0xff,
+            ip shr 24 and 0xff,
+        ).joinToString(".")
     }
 
     private fun setCodecInfo() {

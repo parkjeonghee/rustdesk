@@ -12,11 +12,13 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import '../../common.dart';
+import '../../common/hbbs/hbbs.dart';
 import '../../common/widgets/dialog.dart';
 import '../../common/widgets/login.dart';
 import '../../consts.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
+import '../../utils/device_resource_snapshot_service.dart';
 import '../widgets/dialog.dart';
 import 'home_page.dart';
 import 'page_shape.dart';
@@ -102,6 +104,7 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
   var _isUsingPublicServer = false;
   var _allowAskForNoteAtEndOfConnection = false;
   var _preventSleepWhileConnected = true;
+  var _isUploadingResourceSnapshot = false;
 
   _SettingsState() {
     _enableAbr = option2bool(
@@ -268,6 +271,30 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
       return true;
     } else {
       return false;
+    }
+  }
+
+  Future<void> _uploadDeviceResourceSnapshot() async {
+    if (_isUploadingResourceSnapshot) {
+      return;
+    }
+    setState(() {
+      _isUploadingResourceSnapshot = true;
+    });
+
+    try {
+      final result = await DeviceResourceSnapshotService.uploadSnapshot();
+      showToast(result.message);
+    } on RequestException catch (error) {
+      showToast(error.cause);
+    } catch (error) {
+      showToast('디바이스 리소스 업로드에 실패했습니다: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploadingResourceSnapshot = false;
+        });
+      }
     }
   }
 
@@ -722,6 +749,15 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
                     setState(callback);
                   });
                 }),
+          if (isAndroid)
+            SettingsTile(
+              title: Text(_isUploadingResourceSnapshot
+                  ? '디바이스 리소스 업로드 중...'
+                  : '디바이스 리소스 업로드'),
+              description: Text('CPU / 메모리 / 저장소 / 배터리 / 네트워크 스냅샷 전송'),
+              leading: Icon(Icons.monitor_heart_outlined),
+              onPressed: (context) => _uploadDeviceResourceSnapshot(),
+            ),
           if (!_hideNetwork && !_hideProxy)
             SettingsTile(
                 title: Text(translate('Socks5/Http(s) Proxy')),
