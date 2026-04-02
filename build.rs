@@ -8,6 +8,75 @@ fn build_windows() {
     println!("cargo:rerun-if-changed={}", file2);
 }
 
+#[cfg(windows)]
+fn ensure_sciter_dll() {
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    const SCITER_DLL_URL: &str =
+        "https://raw.githubusercontent.com/c-smile/sciter-sdk/master/bin.win/x64/sciter.dll";
+
+    fn release_dir_from_out_dir(out_dir: &Path) -> Option<PathBuf> {
+        out_dir.parent()?.parent()?.parent().map(Path::to_path_buf)
+    }
+
+    let out_dir = std::env::var_os("OUT_DIR").map(PathBuf::from);
+    let Some(out_dir) = out_dir else {
+        return;
+    };
+    let Some(release_dir) = release_dir_from_out_dir(&out_dir) else {
+        return;
+    };
+    let target_sciter = release_dir.join("sciter.dll");
+
+    println!("cargo:rerun-if-env-changed=SCITER_DLL_PATH");
+    println!("cargo:rerun-if-changed=sciter.dll");
+
+    if target_sciter.exists() {
+        return;
+    }
+
+    let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR").map(PathBuf::from);
+    let mut candidates = Vec::new();
+    if let Ok(path) = std::env::var("SCITER_DLL_PATH") {
+        candidates.push(PathBuf::from(path));
+    }
+    if let Some(manifest_dir) = &manifest_dir {
+        candidates.push(manifest_dir.join("sciter.dll"));
+    }
+
+    for candidate in candidates {
+        if candidate.is_file() {
+            std::fs::copy(&candidate, &target_sciter).unwrap_or_else(|err| {
+                panic!(
+                    "Failed to copy sciter.dll from {} to {}: {}",
+                    candidate.display(),
+                    target_sciter.display(),
+                    err
+                )
+            });
+            return;
+        }
+    }
+
+    let download_command = format!(
+        "Invoke-WebRequest -Uri '{}' -OutFile '{}'",
+        SCITER_DLL_URL,
+        target_sciter.display()
+    );
+    let status = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &download_command])
+        .status()
+        .unwrap_or_else(|err| panic!("Failed to start PowerShell to download sciter.dll: {}", err));
+
+    if !status.success() {
+        panic!(
+            "Failed to download sciter.dll to {}. Set SCITER_DLL_PATH or place sciter.dll in the repository root.",
+            target_sciter.display()
+        );
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn build_mac() {
     let file = "src/platform/macos.mm";
@@ -84,6 +153,8 @@ fn main() {
     build_manifest();
     #[cfg(windows)]
     build_windows();
+    #[cfg(windows)]
+    ensure_sciter_dll();
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
     if target_os == "macos" {
         #[cfg(target_os = "macos")]
