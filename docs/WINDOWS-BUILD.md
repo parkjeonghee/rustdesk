@@ -135,6 +135,61 @@ If you are working from the original repository path instead of the junction, th
 - `C:\Users\myjul\OneDrive\ドキュメント\workspace\rustdesk\target\release\service.exe`
 - `C:\Users\myjul\OneDrive\ドキュメント\workspace\rustdesk\target\release\naming.exe`
 
+## Launch And Connect From Web Links
+
+The installed Windows build registers a URL Protocol, so the application can be launched from a browser or web page by clicking a `rustdesk://...` link.
+
+This behavior is intended for the installed Windows application. If you only run a raw `cargo build` output from an arbitrary folder, the protocol may not be registered.
+
+### Basic format
+
+- `rustdesk://connect/<REMOTE_ID>`
+- `rustdesk://control/<REMOTE_ID>`
+- `rustdesk://<REMOTE_ID>`
+
+The `control` form and the bare-ID form are both treated internally as `connect`.
+
+Example:
+
+```html
+<a href="rustdesk://connect/123456789">Connect with RustDesk</a>
+```
+
+### Supported authorities
+
+- `connect`
+- `control`
+- `file-transfer`
+- `port-forward`
+- `rdp`
+- bare ID form
+
+Examples:
+
+- `rustdesk://connect/123456789`
+- `rustdesk://file-transfer/123456789`
+- `rustdesk://rdp/123456789`
+- `rustdesk://123456789`
+
+### Supported query parameters
+
+- `password`: passes a connection password
+- `relay=true`: forces relay mode
+- `switch_uuid`: passes an internal session switch value
+
+Example:
+
+```text
+rustdesk://connect/123456789?password=abcd&relay=true
+```
+
+### Runtime behavior
+
+- The remote ID from the web link is converted into the existing `--connect <REMOTE_ID>` flow.
+- The received remote ID is also stored as the application's last remote ID.
+- If `password` is present, it is forwarded using the existing argument convention.
+- If `relay=true` is present, a `--relay` argument is added.
+
 ## Common failures
 
 ### `Unable to find libclang`
