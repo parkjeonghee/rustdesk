@@ -10,6 +10,71 @@ use hbb_common::{config, log};
 #[cfg(windows)]
 use tauri_winrt_notification::{Duration, Sound, Toast};
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn parse_uri_scheme_to_args(arg: &str) -> Option<Vec<String>> {
+    let prefix = crate::get_uri_prefix();
+    let raw = arg.strip_prefix(&prefix)?.trim_start_matches('/');
+    if raw.is_empty() {
+        return Some(Vec::new());
+    }
+
+    let (path_part, query_part) = raw.split_once('?').unwrap_or((raw, ""));
+    let mut segments = path_part.split('/').filter(|segment| !segment.is_empty());
+    let first = segments.next()?;
+    let (authority, mut id) = if let Some(second) = segments.next() {
+        (first.to_ascii_lowercase(), second.to_owned())
+    } else {
+        ("connect".to_owned(), first.to_owned())
+    };
+
+    let ext = format!(".{}", crate::get_app_name().to_lowercase());
+    if id.ends_with(&ext) {
+        id = id.trim_end_matches(&ext).to_owned();
+    }
+
+    let cmd = match authority.as_str() {
+        "connect" | "control" => "--connect",
+        "file-transfer" => "--file-transfer",
+        "port-forward" => "--port-forward",
+        "rdp" => "--rdp",
+        "play" => "--play",
+        _ => return None,
+    };
+
+    if id.is_empty() {
+        return None;
+    }
+
+    config::LocalConfig::set_remote_id(&id);
+
+    let mut parsed_args = vec![cmd.to_owned(), id];
+    let mut extra_args = Vec::new();
+    let mut password = None;
+
+    for (key, value) in url::form_urlencoded::parse(query_part.as_bytes()) {
+        match key.as_ref() {
+            "password" => password = Some(value.into_owned()),
+            "relay" => {
+                let value = value.as_ref();
+                if value.eq_ignore_ascii_case("true") || value == "1" || value.eq_ignore_ascii_case("y") {
+                    extra_args.push("--relay".to_owned());
+                }
+            }
+            "switch_uuid" => {
+                extra_args.push("--switch_uuid".to_owned());
+                extra_args.push(value.into_owned());
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(password) = password {
+        parsed_args.push(password);
+    }
+    parsed_args.extend(extra_args);
+    Some(parsed_args)
+}
+
 #[macro_export]
 macro_rules! my_println{
     ($($arg:tt)*) => {
@@ -79,6 +144,28 @@ pub fn core_main() -> Option<Vec<String>> {
         }
         i += 1;
     }
+
+    if args.len() == 1 {
+        if let Some(parsed_args) = parse_uri_scheme_to_args(&args[0]) {
+            args = parsed_args;
+            #[cfg(feature = "flutter")]
+            {
+                _is_flutter_invoke_new_connection = matches!(
+                    args.first().map(String::as_str),
+                    Some(
+                        "--connect"
+                            | "--play"
+                            | "--file-transfer"
+                            | "--view-camera"
+                            | "--port-forward"
+                            | "--terminal"
+                            | "--rdp"
+                    )
+                );
+            }
+        }
+    }
+
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     if args.is_empty() {
         #[cfg(target_os = "linux")]
