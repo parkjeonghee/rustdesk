@@ -31,6 +31,14 @@ else()
     )
 endif()
 
+file(READ "${SOURCE_PATH}/build/cmake/aom_optimization.cmake" AOM_OPTIMIZATION_CMAKE)
+string(REPLACE [[  if(NOT "${nasm_helptext}" MATCHES "-Ox")
+    message(
+      FATAL_ERROR "Unsupported nasm: multipass optimization not supported.")
+  endif()
+]] "" AOM_OPTIMIZATION_CMAKE "${AOM_OPTIMIZATION_CMAKE}")
+file(WRITE "${SOURCE_PATH}/build/cmake/aom_optimization.cmake" "${AOM_OPTIMIZATION_CMAKE}")
+
 set(aom_target_cpu "")
 if(VCPKG_TARGET_IS_UWP OR (VCPKG_TARGET_IS_WINDOWS AND VCPKG_TARGET_ARCHITECTURE MATCHES "^arm"))
     # UWP + aom's assembler files result in weirdness and build failures

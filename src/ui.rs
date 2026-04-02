@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     iter::FromIterator,
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
@@ -35,6 +36,30 @@ lazy_static::lazy_static! {
 }
 
 struct UIHostHandler;
+
+fn resolve_ui_page_path(page: &str) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Ok(current_dir) = std::env::current_dir() {
+        candidates.push(current_dir.join("src").join("ui").join(page));
+    }
+
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            candidates.push(exe_dir.join("src").join("ui").join(page));
+            candidates.push(
+                exe_dir
+                    .join("..")
+                    .join("..")
+                    .join("src")
+                    .join("ui")
+                    .join(page),
+            );
+        }
+    }
+
+    candidates.into_iter().find(|path| path.exists())
+}
 
 pub fn start(args: &mut [String]) {
     #[cfg(target_os = "macos")]
@@ -176,13 +201,14 @@ pub fn start(args: &mut [String]) {
         frame.load_html(html.as_bytes(), Some(page));
     }
     #[cfg(not(feature = "inline"))]
-    frame.load_file(&format!(
-        "file://{}/src/ui/{}",
-        std::env::current_dir()
-            .map(|c| c.display().to_string())
-            .unwrap_or("".to_owned()),
-        page
-    ));
+    {
+        if let Some(path) = resolve_ui_page_path(page) {
+            frame.load_file(&format!("file://{}", path.display()));
+        } else {
+            log::error!("Failed to resolve UI page path for {}", page);
+            return;
+        }
+    }
     let hide_cm = *cm::HIDE_CM.lock().unwrap();
     if !args.is_empty() && args[0] == "--cm" && hide_cm {
         // run_app calls expand(show) + run_loop, we use collapse(hide) + run_loop instead to create a hidden window
